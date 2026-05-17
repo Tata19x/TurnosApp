@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './pages/Login';
+import ForgotPassword from './components/ForgotPassword';
 import DashboardAdmin from './pages/DashboardAdmin';
 import DashboardEmployee from './pages/DashboardEmployee';
 import './App.css';
@@ -12,6 +13,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
 
           <Route
             path="/dashboard-admin"

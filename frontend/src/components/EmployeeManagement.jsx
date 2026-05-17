@@ -13,6 +13,9 @@ const EmployeeManagement = () => {
     name: '',
     email: '',
     password: '',
+    document: '',
+    phone: '',
+    address: '',
   });
   const [formLoading, setFormLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -64,18 +67,28 @@ const EmployeeManagement = () => {
         // Actualizar empleado
         await authAPI.updateEmployee(editingEmployee.id, {
           name: formData.name,
-          email: formData.email
+          email: formData.email,
+          document: formData.document,
+          phone: formData.phone,
+          address: formData.address,
         });
         setMessage('Empleado actualizado exitosamente');
         setMessageType('success');
       } else {
         // Crear nuevo empleado
-        await authAPI.registerEmployee(formData.name, formData.email, formData.password);
+        await authAPI.registerEmployee(
+          formData.name, 
+          formData.email, 
+          formData.password,
+          formData.document,
+          formData.phone,
+          formData.address
+        );
         setMessage('Empleado registrado exitosamente');
         setMessageType('success');
       }
 
-      setFormData({ name: '', email: '', password: '' });
+      setFormData({ name: '', email: '', password: '', document: '', phone: '', address: '' });
       setEditingEmployee(null);
       setShowForm(false);
       
@@ -97,8 +110,12 @@ const EmployeeManagement = () => {
     setFormData({
       name: employee.name,
       email: employee.email,
-      password: '', // No mostrar contraseña
+      password: '',
+      document: employee.document || '',
+      phone: employee.phone || '',
+      address: employee.address || '',
     });
+
     setShowForm(true);
     setMessage('');
   };
@@ -126,7 +143,7 @@ const EmployeeManagement = () => {
   const handleCancel = () => {
     setShowForm(false);
     setEditingEmployee(null);
-    setFormData({ name: '', email: '', password: '' });
+    setFormData({ name: '', email: '', password: '', document: '', phone: '', address: '' });
     setMessage('');
   };
 
@@ -162,7 +179,7 @@ const EmployeeManagement = () => {
           <button
             onClick={() => {
               setEditingEmployee(null);
-              setFormData({ name: '', email: '', password: '' });
+              setFormData({ name: '', email: '', password: '', document: '', phone: '', address: '' });
               setShowForm(true);
               setMessage('');
             }}
@@ -234,6 +251,44 @@ const EmployeeManagement = () => {
                   />
                 </div>
               )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div>
+                <label className="block text-gray-700 font-semibold mb-2">Documento (opcional)</label>
+                <input
+                  type="text"
+                  name="document"
+                  value={formData.document}
+                  onChange={handleInputChange}
+                  placeholder="123456789"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-700 font-semibold mb-2">Teléfono (opcional)</label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  placeholder="+34 600 123 456"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-700 font-semibold mb-2">Dirección (opcional)</label>
+                <input
+                  type="text"
+                  name="address"
+                  value={formData.address}
+                  onChange={handleInputChange}
+                  placeholder="Calle Principal 123"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
             </div>
 
             <div className="flex gap-4">
