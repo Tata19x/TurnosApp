@@ -8,11 +8,13 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
     startTime: '',
     endTime: '',
     description: '',
+    recurring: false,
+    endDateRecurring: '',
+    daysOfWeek: [],
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Si es edición, cargar datos del turno
   useEffect(() => {
     if (turno) {
       setFormData({
@@ -21,16 +23,49 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
         startTime: turno.startTime,
         endTime: turno.endTime,
         description: turno.description || '',
+        recurring: false,
+        endDateRecurring: '',
+        daysOfWeek: [],
       });
     }
   }, [turno]);
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: type === 'checkbox' ? checked : value,
     }));
+  };
+
+  const handleDayToggle = (day) => {
+    setFormData((prev) => ({
+      ...prev,
+      daysOfWeek: prev.daysOfWeek.includes(day)
+        ? prev.daysOfWeek.filter((d) => d !== day)
+        : [...prev.daysOfWeek, day],
+    }));
+  };
+
+  const generateRecurringDates = () => {
+    const dates = [];
+    const [year, month, day] = formData.date.split('-').map(Number);
+    const [endYear, endMonth, endDay] = formData.endDateRecurring.split('-').map(Number);
+    let currentDate = new Date(year, month - 1, day);
+    const endDate = new Date(endYear, endMonth - 1, endDay);
+
+    while (currentDate <= endDate) {
+      const dayOfWeek = currentDate.getDay();
+      if (formData.daysOfWeek.includes(dayOfWeek.toString())) {
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+        const currentDay = String(currentDate.getDate()).padStart(2, '0');
+        dates.push(`${currentYear}-${currentMonth}-${currentDay}`);
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return dates;
   };
 
   const handleSubmit = async (e) => {
@@ -40,22 +75,69 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
 
     try {
       if (turno) {
-        // Editar turno existente
-        await turnosAPI.update(turno.id, formData);
+        await turnosAPI.update(turno.id, {
+          employeeId: formData.employeeId,
+          date: formData.date,
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          description: formData.description,
+        });
+      } else if (formData.recurring) {
+        if (!formData.endDateRecurring) {
+          setError('Selecciona la fecha de fin de recurrencia');
+          setLoading(false);
+          return;
+        }
+
+        if (formData.endDateRecurring < formData.date) {
+          setError('La fecha de fin de recurrencia debe ser igual o posterior a la fecha de inicio');
+          setLoading(false);
+          return;
+        }
+
+        if (formData.daysOfWeek.length === 0) {
+          setError('Selecciona al menos un dia de la semana para la recurrencia');
+          setLoading(false);
+          return;
+        }
+
+        const dates = generateRecurringDates();
+        if (dates.length === 0) {
+          setError('No se seleccionó ningún día para la recurrencia');
+          setLoading(false);
+          return;
+        }
+
+        const turnos = dates.map((date) => ({
+          employeeId: formData.employeeId,
+          date,
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          description: formData.description,
+        }));
+
+        await turnosAPI.createBulk(turnos);
       } else {
-        // Crear nuevo turno
-        await turnosAPI.create(formData);
+        await turnosAPI.create({
+          employeeId: formData.employeeId,
+          date: formData.date,
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          description: formData.description,
+        });
       }
 
       onSuccess();
       if (!turno) {
-        // Limpiar formulario solo si es creación
         setFormData({
           employeeId: '',
           date: '',
           startTime: '',
           endTime: '',
           description: '',
+          recurring: false,
+          endDateRecurring: '',
+          daysOfWeek: [],
         });
       }
     } catch (err) {
@@ -72,16 +154,20 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
       startTime: '',
       endTime: '',
       description: '',
+      recurring: false,
+      endDateRecurring: '',
+      daysOfWeek: [],
     });
     setError('');
     onCancel();
   };
 
-  // Obtener fecha mínima (hoy)
   const getMinDate = () => {
     const today = new Date();
     return today.toISOString().split('T')[0];
   };
+
+  const daysOfWeekNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -105,6 +191,7 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
               onChange={handleInputChange}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
               required
+              disabled={!!turno}
             >
               <option value="">Seleccionar empleado</option>
               {employees.map((employee) => (
@@ -116,7 +203,7 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
           </div>
 
           <div>
-            <label className="block text-gray-700 font-semibold mb-2">Fecha</label>
+            <label className="block text-gray-700 font-semibold mb-2">Fecha Inicio</label>
             <input
               type="date"
               name="date"
@@ -125,6 +212,7 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
               min={getMinDate()}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
               required
+              disabled={!!turno}
             />
           </div>
 
@@ -165,13 +253,61 @@ const TurnoForm = ({ turno, onSuccess, onCancel, employees }) => {
           />
         </div>
 
+        {!turno && (
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <label className="flex items-center mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                name="recurring"
+                checked={formData.recurring}
+                onChange={handleInputChange}
+                className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-600"
+              />
+              <span className="ml-3 font-semibold text-gray-700">Crear turno recurrente</span>
+            </label>
+
+            {formData.recurring && (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">Selecciona los días de la semana y la fecha de fin:</p>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {daysOfWeekNames.map((day, index) => (
+                    <label key={index} className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.daysOfWeek.includes(index.toString())}
+                        onChange={() => handleDayToggle(index.toString())}
+                        className="w-4 h-4 rounded border-gray-300 focus:ring-2 focus:ring-blue-600"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">{day}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-2">Fecha de Fin de Recurrencia</label>
+                  <input
+                    type="date"
+                    name="endDateRecurring"
+                    value={formData.endDateRecurring}
+                    onChange={handleInputChange}
+                    min={formData.date}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    required={formData.recurring}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-4">
           <button
             type="submit"
             disabled={loading}
             className="bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-blue-700 transition duration-200 disabled:bg-gray-400"
           >
-            {loading ? 'Guardando...' : (turno ? 'Actualizar Turno' : 'Crear Turno')}
+            {loading ? 'Guardando...' : turno ? 'Actualizar Turno' : 'Crear Turno(s)'}
           </button>
           <button
             type="button"

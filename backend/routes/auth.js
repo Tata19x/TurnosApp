@@ -1,10 +1,16 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const crypto = require('crypto');
+const { User, Turno, sequelize } = require('../models');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
+
 const router = express.Router();
+
+const generateResetToken = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
 
 // Login
 router.post('/login', async (req, res) => {
@@ -35,7 +41,7 @@ router.post('/login', async (req, res) => {
 
 // Registro de empleados (solo admin)
 router.post('/register-employee', authenticateToken, requireAdmin, async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, document, phone, address } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({ message: 'Nombre, email y contraseña requeridos' });
@@ -48,9 +54,28 @@ router.post('/register-employee', authenticateToken, requireAdmin, async (req, r
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({ name, email, password: hashedPassword, role: 'employee' });
+    const newUser = await User.create({ 
+      name, 
+      email, 
+      password: hashedPassword, 
+      role: 'employee',
+      document: document || null,
+      phone: phone || null,
+      address: address || null
+    });
 
-    res.status(201).json({ message: 'Empleado registrado exitosamente', user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role } });
+    res.status(201).json({ 
+      message: 'Empleado registrado exitosamente', 
+      user: { 
+        id: newUser.id, 
+        name: newUser.name, 
+        email: newUser.email, 
+        role: newUser.role,
+        document: newUser.document,
+        phone: newUser.phone,
+        address: newUser.address
+      } 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error en el servidor' });
   }
@@ -61,7 +86,7 @@ router.get('/employees', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const employees = await User.findAll({
       where: { role: 'employee' },
-      attributes: ['id', 'name', 'email', 'role'],
+      attributes: ['id', 'name', 'email', 'role', 'document', 'phone', 'address'],
       order: [['name', 'ASC']]
     });
 
@@ -74,7 +99,7 @@ router.get('/employees', authenticateToken, requireAdmin, async (req, res) => {
 // Actualizar empleado (solo admin)
 router.put('/employees/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { name, email } = req.body;
+  const { name, email, document, phone, address } = req.body;
 
   if (!name || !email) {
     return res.status(400).json({ message: 'Nombre y email son requeridos' });
@@ -92,8 +117,25 @@ router.put('/employees/:id', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({ message: 'Email ya registrado por otro usuario' });
     }
 
-    await employee.update({ name, email });
-    res.json({ message: 'Empleado actualizado exitosamente', user: { id: employee.id, name: employee.name, email: employee.email, role: employee.role } });
+    await employee.update({ 
+      name, 
+      email,
+      document: document || null,
+      phone: phone || null,
+      address: address || null
+    });
+    res.json({ 
+      message: 'Empleado actualizado exitosamente', 
+      user: { 
+        id: employee.id, 
+        name: employee.name, 
+        email: employee.email, 
+        role: employee.role,
+        document: employee.document,
+        phone: employee.phone,
+        address: employee.address
+      } 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar empleado' });
   }
@@ -103,24 +145,145 @@ router.put('/employees/:id', authenticateToken, requireAdmin, async (req, res) =
 router.delete('/employees/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
+  const transaction = await sequelize.transaction();
+
   try {
-    const employee = await User.findOne({ where: { id: parseInt(id), role: 'employee' } });
+    const employee = await User.findOne({
+      where: { id: parseInt(id), role: 'employee' },
+      transaction,
+    });
     if (!employee) {
+      await transaction.rollback();
       return res.status(404).json({ message: 'Empleado no encontrado' });
     }
 
-    // Verificar si el empleado tiene turnos asignados
-    const { Turno } = require('../models');
-    const turnosCount = await Turno.count({ where: { employeeId: id } });
+    await Turno.destroy({ where: { employeeId: employee.id }, transaction });
+    await employee.destroy({ transaction });
+    await transaction.commit();
 
-    if (turnosCount > 0) {
-      return res.status(400).json({ message: 'No se puede eliminar el empleado porque tiene turnos asignados' });
-    }
-
-    await employee.destroy();
     res.json({ message: 'Empleado eliminado exitosamente' });
   } catch (error) {
+    await transaction.rollback();
+    console.error('Error al eliminar empleado:', error);
     res.status(500).json({ message: 'Error al eliminar empleado' });
+  }
+});
+
+// Solicitar recuperación de contraseña
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email requerido' });
+  }
+
+  try {
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      // No revelar si el email existe por seguridad
+      return res.json({ message: 'Si el email existe en el sistema, recibirá un enlace de recuperación' });
+    }
+
+    // Generar token y establecer expiración (30 minutos)
+    const resetToken = generateResetToken();
+    const resetTokenExpiry = new Date(Date.now() + 30 * 60 * 1000);
+
+    await user.update({ resetToken, resetTokenExpiry });
+
+    // En un caso real, aquí enviarías un email con el token
+    // Por ahora, devolvemos el token en desarrollo (NUNCA en producción)
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    res.json({ 
+      message: 'Si el email existe en el sistema, recibirá un enlace de recuperación',
+      ...(isProduction ? {} : { resetToken })
+    });
+  } catch (error) {
+    console.error('Error en forgot-password:', error);
+    res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
+// Validar token de recuperación y cambiar contraseña
+router.post('/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: 'Token y nueva contraseña requeridos' });
+  }
+
+  try {
+    const user = await User.findOne({ 
+      where: { resetToken: token }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Token inválido' });
+    }
+
+    // Verificar si el token ha expirado
+    if (new Date() > user.resetTokenExpiry) {
+      return res.status(400).json({ message: 'El token ha expirado. Por favor solicita uno nuevo' });
+    }
+
+    // Actualizar contraseña y limpiar token
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await user.update({ 
+      password: hashedPassword, 
+      resetToken: null, 
+      resetTokenExpiry: null 
+    });
+
+    res.json({ message: 'Contraseña actualizada exitosamente' });
+  } catch (error) {
+    console.error('Error en reset-password:', error);
+    res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
+// Obtener perfil del usuario actual (para empleados)
+router.get('/profile', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password', 'resetToken', 'resetTokenExpiry'] }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Error en el servidor' });
+  }
+});
+
+// Cambiar contraseña (usuario autenticado)
+router.post('/change-password', authenticateToken, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Contraseña actual y nueva son requeridas' });
+  }
+
+  try {
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Contraseña actual incorrecta' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await user.update({ password: hashedPassword });
+
+    res.json({ message: 'Contraseña actualizada exitosamente' });
+  } catch (error) {
+    console.error('Error en change-password:', error);
+    res.status(500).json({ message: 'Error en el servidor' });
   }
 });
 

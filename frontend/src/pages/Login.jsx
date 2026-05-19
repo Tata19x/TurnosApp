@@ -77,6 +77,15 @@ const Login = () => {
           </button>
         </form>
 
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => navigate('/forgot-password')}
+            className="text-blue-600 hover:text-blue-800 text-sm font-semibold"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        </div>
+
         <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
           <p className="text-sm text-gray-600 mb-2">
             <span className="font-semibold">Credenciales de prueba (Admin):</span>

@@ -139,6 +139,7 @@ const TurnosManagement = () => {
       {view === 'list' ? (
         <TurnosList
           turnos={turnos}
+          employees={employees}
           onEdit={handleEditTurno}
           onRefresh={loadData}
         />
